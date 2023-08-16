@@ -2,19 +2,39 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Models\Event;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Gate;
+use App\Http\Resources\EventResource;
+use App\Http\Traits\CanLoadRelationships;
 
 class EventController extends Controller
 {
+    use CanLoadRelationships;
+    private array $relations = ['user', 'attendees', 'attendee.user']; 
+
+    public function __construct()
+    {
+        $this->middleware('auth:sanctum')->except(['index', 'show']);
+        $this->middleware('throttle:api')->only(['store', 'destroy', 'update']);
+        $this->authorizeResource(Event::class, 'event');
+        
+    }
     /**
      * Display a listing of the resource.
      */
+
+
     public function index()
     {
-        return Event::all();
+        
+        $query = $this->loadRelationships(Event::query());
+        return EventResource::collection(
+            $query->latest()->paginate()
+        );
     }
+   
 
     /**
      * Store a newly created resource in storage.
@@ -29,10 +49,10 @@ class EventController extends Controller
                 'start_time'=>'required|date',
                 'end_time'=>'required|date|after:start_time'
             ]),
-            'user_id'=>1
+            'user_id'=> request()->user()->id
         ]);
 
-        return $event;
+        return new EventResource($this->loadRelationships($event));
     }
 
     /**
@@ -40,7 +60,9 @@ class EventController extends Controller
      */
     public function show(Event $event)
     {
-        return $event;
+        $event->load('user', 'attendees');
+        return new EventResource(
+            $this->loadRelationships($event));
     }
 
     /**
@@ -48,6 +70,11 @@ class EventController extends Controller
      */
     public function update(Request $request, Event $event)
     {
+        // if(Gate::denies('update-event', $event)){
+        //     abort(403, 'you are not authorised to update this event');
+        // }
+
+        // $this->authorize('update-event', $event);
         $event->update(
             $request->validate([
                 'name'=>'sometimes|string|max:255',
@@ -57,7 +84,7 @@ class EventController extends Controller
             ])
         );
 
-        return $event;
+        return new EventResource($this->loadRelationships($event));;
     }
 
     /**
